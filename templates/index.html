@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script>
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    console.log("Text copied to clipboard: " + text);
+                })
+                .catch((error) => {
+                    console.error("Failed to copy text to clipboard: " + error);
+                });
+        }
+
+        function appendToBlacklistedPhashes(phash) {
+            fetch('/append-to-blacklisted', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ phash: phash })
+            })
+                .then(response => {
+                    if (response.ok) {
+                        console.log("Phash appended to blacklisted_phashes: " + phash);
+                    } else {
+                        console.error("Failed to append phash to blacklisted_phashes");
+                    }
+                })
+                .catch(error => {
+                    console.error("Error occurred while appending phash to blacklisted_phashes: " + error);
+                });
+        }
+    </script>
+</head>
+
+<body>
+    <div class="info" , title="click to add phash to the blacklist">
+        {{ phash }}
+    </div>
+
+    <div class="video-container">
+        <div>
+            <h2 onclick="copyToClipboard('{{ video1_name }}')" , title="click to copy value to your clipboard">
+                Biggest File: {{ video1_name }}
+            </h2>
+            <video src="/video1" width="500" height="700" controls muted autoplay loop></video>
+        </div>
+        <div>
+            <h2 onclick="copyToClipboard('{{ video2_name }}')" , title="click to copy value to your clipboard">
+                File To Remove: {{ video2_name
+                }}</h2>
+            <video src="/video2" width="500" height="700" controls muted autoplay loop></video>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const phashElement = document.querySelector('.info');
+            phashElement.addEventListener('click', () => {
+                const phash = phashElement.textContent;
+                appendToBlacklistedPhashes(phash);
+            });
+        });
+    </script>
+</body>
+
+</html>
