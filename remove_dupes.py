@@ -1,9 +1,13 @@
 import os
+import sys
 import cv2
 import time
 import sqlite3
 import requests
+import argparse
+
 from pathlib import Path
+from build_db import build_and_populate_database
 from user_config import (
     flask_server,
     database_path,
@@ -11,6 +15,7 @@ from user_config import (
     mse_image_threshold,
     mse_video_threshold,
     min_group_size,
+    min_group_duration,
 )
 
 # currently only works for videos!
@@ -242,11 +247,18 @@ class pHashProcessor:
                     [entry["file_path"], biggest_file["file_path"]]
                 )
 
-                if OUTPUT_TO_FLASK:
-                    if is_server_live():
-                        video1_path = biggest_file["file_path"]
-                        video2_path = entry["file_path"]
-                        update_videos(video1_path, video2_path, entry["phash"])
+                # here is where we build the window to display the data
+                # it should embed the biggest file on the left, and the file to be deleted on the right
+                # the videos should be muted, but autoplay and loop
+                # with the info about the file below each embed respectively
+                # then underneath the video containers, there should be the text that asks if you are sure you want to delete the file.
+
+                # biggest file data:
+                # biggest_file['file_model'], biggest_file['file_path'], biggest_file['file_size'], biggest_file['duration']
+                # file to be deleted:
+                # entry['file_model'], entry['file_path'], entry['file_size'], entry['duration']
+
+                # if a user decides to delete the file, we pass the path to self.remove_file(path)
 
                 print("Biggest file:")
                 print(f"File Model: {biggest_file['file_model']}")
@@ -488,7 +500,7 @@ class pHashProcessor:
                 print(f"Error: {e}")
 
 
-def main():
+def remove_duplicates():
     processor = pHashProcessor()
     conn = processor.connect_to_database(database_path)
     rows = processor.read_rows_with_phash(conn)
@@ -500,14 +512,56 @@ def main():
     )
 
     curated_grouped_entries = processor.get_curated_grouped_entries(
-        grouped_entries, min_size=min_group_size
+        grouped_entries, min_size=min_group_size, min_duration=min_group_duration
     )
 
-    os.system("cls")
+    os.system("cls" if os.name == "nt" else "clear")
+    print("Removing duplicates...\n")
+
     processor.process_grouped_entries(curated_grouped_entries, auto_delete=False)
 
     print()
-    input("Press Enter to exit...")
+
+
+def main():
+    os.system("cls" if os.name == "nt" else "clear")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--remove-duplicates",
+        action="store_true",
+        help="Run the pHash Processor (removes duplicate files)",
+    )
+    parser.add_argument(
+        "--rebuild-database",
+        action="store_true",
+        help="Rebuild our database with new data from StashApp",
+    )
+
+    args = parser.parse_args()
+
+    if args.rebuild_database:
+        build_and_populate_database()
+    if args.remove_duplicates:
+        remove_duplicates()
+
+    if not (args.remove_duplicates or args.rebuild_database):
+        while True:
+            print("\nWhat would you like to do?\n")
+            print("1. Remove duplicate files    [--remove-duplicates]")
+            print("2. Rebuild database          [--rebuild-database]")
+            print("3. Exit\n")
+            choice = input("Enter your choice: ")
+
+            if choice == "1":
+                remove_duplicates()
+                break
+            elif choice == "2":
+                build_and_populate_database()
+                break
+            elif choice == "3":
+                sys.exit()
+            else:
+                print("Invalid choice. Please try again.")
 
 
 if __name__ == "__main__":
