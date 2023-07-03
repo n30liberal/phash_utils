@@ -18,3 +18,10 @@ mse_video_threshold = 30
 # while being 0, we're not limiting the script at all
 # this can be useful when you have a lot of false positives for the smaller files (think tiktok splash screens ruining the phash)
 min_group_size = 0 * 1024 * 1024
+
+
+# limits the script to only work with groups that have a summed duration of at least n seconds
+# where 0 is your duration in seconds
+# while being 0, we're not limiting the script at all
+# this can be useful when you have a lot of false positives for the shorter (think tiktok splash screens ruining the phash)
+min_group_duration = 0
