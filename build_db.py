@@ -178,11 +178,11 @@ def create_empty_database(database_path):
     conn.close()
 
 
-def main():
+def build_and_populate_database():
     os.system("cls" if os.name == "nt" else "clear")
 
     start_time = time.time()
-    print("Building database...\n")
+    print("\nBuilding database...\n")
 
     output_database_path = database_path
 
@@ -212,9 +212,12 @@ def main():
 
     print(f"Database built in {time.time() - start_time:.2f} seconds.")
     print()
-    input("Press Enter to exit...")
 
 
-# Run the main function
+def main():
+    print("This script is not meant to be run as a standalone script.")
+    print("Please run remove_dupes.py with the --rebuild-database flag instead.")
+
+
 if __name__ == "__main__":
     main()
