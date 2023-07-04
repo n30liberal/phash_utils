@@ -25,7 +25,7 @@ def fetch_image_data(database_path, processed_images_path):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT file_id, file_parent, file_basename FROM files WHERE md5 IS NOT NULL AND phash IS NULL"
+        "SELECT file_id, file_path FROM files WHERE md5 IS NOT NULL AND phash IS NULL"
     )
     results = cursor.fetchall()
 
@@ -46,9 +46,7 @@ def fetch_image_data(database_path, processed_images_path):
 def process_image(row, processed_images_path):
     try:
         file_id = row[0]
-        file_parent = row[1]
-        file_basename = row[2]
-        file_path = Path(file_parent) / file_basename
+        file_path = Path(row[1])
         phash = calculate_phash(str(file_path))
 
         with open(processed_images_path, "a") as processed_file:
