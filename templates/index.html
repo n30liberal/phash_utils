@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Viewer</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <title>Comparison</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ time.time() }}">
     <script>
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text)
@@ -37,27 +37,55 @@
                 });
         }
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.3/socket.io.js"></script>
+    <script type="text/javascript">
+        // Connect to the WebSocket server
+        const socket = io();
+
+        // Listen for the 'refresh' event and reload the page with cache busting
+        socket.on('refresh', function (cacheBuster) {
+            const timestamp = new Date().getTime();
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('cache_buster', cacheBuster);
+            urlParams.set('timestamp', timestamp);
+            window.location.search = urlParams.toString();
+            window.location.reload(true);
+            window.location.href = "/?cache_buster=" + cacheBuster + "&timestamp=" + timestamp;
+        });
+    </script>
 </head>
 
 <body>
-    <div class="info" , title="click to add phash to the blacklist">
+    <div class="info" title="click to add phash to the blacklist">
         {{ phash }}
     </div>
 
     <div class="video-container">
         <div>
-            <h2 onclick="copyToClipboard('{{ video1_name }}')" , title="click to copy value to your clipboard">
-                Biggest File: {{ video1_name }}
+            <h2 onclick="copyToClipboard('{{ video1_name }}')" title="click to copy value to your clipboard">
+                Biggest File
             </h2>
-            <video src="/video1" width="500" height="700" controls muted autoplay loop></video>
+            {% if video1_name.endswith(('.jpg', '.jpeg', '.png', '.gif')) %}
+            <img src="/video1?cache_buster={{ cache_buster }}" alt="{{ video1_name }}" width="500" height="700">
+            {% else %}
+            <video id="video1" src="/video1?cache_buster={{ cache_buster }}" width="500" height="700" controls muted
+                autoplay loop></video>
+            {% endif %}
         </div>
         <div>
-            <h2 onclick="copyToClipboard('{{ video2_name }}')" , title="click to copy value to your clipboard">
-                File To Remove: {{ video2_name
-                }}</h2>
-            <video src="/video2" width="500" height="700" controls muted autoplay loop></video>
+            <h2 onclick="copyToClipboard('{{ video2_name }}')" title="click to copy value to your clipboard">
+                File To Remove
+            </h2>
+            {% if video2_name.endswith(('.jpg', '.jpeg', '.png', '.gif')) %}
+            <img src="/video2?cache_buster={{ cache_buster }}" alt="{{ video2_name }}" width="500" height="700">
+            {% else %}
+            <video id="video2" src="/video2?cache_buster={{ cache_buster }}" width="500" height="700" controls muted
+                autoplay loop></video>
+            {% endif %}
         </div>
     </div>
+
+
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
