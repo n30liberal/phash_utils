@@ -1,3 +1,6 @@
+import time
+from user_config import blacklisted_phash_path
+
 from flask import (
     Flask,
     render_template,
@@ -8,9 +11,6 @@ from flask import (
     redirect,
 )
 from flask_socketio import SocketIO, send, emit  # noqa f401
-
-import os, time
-from user_config import blacklisted_phash_path
 
 app = Flask(__name__)
 socketio = SocketIO(app)
