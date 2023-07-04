@@ -2,6 +2,7 @@ import sqlite3
 import time
 import os
 from user_config import database_path, stash_database_path
+from user_config import image_extensions, video_extensions
 
 
 DESTRUCTIVE_RUN = True
@@ -35,13 +36,13 @@ class DatabaseManager:
             self.cursor.execute(
                 """
                 INSERT OR REPLACE INTO files (
-                    file_id, file_model, file_basename, file_parent,
-                    file_size, ohash, phash, md5, duration, video_codec,
+                    file_id, scene_id, file_model, file_basename, file_parent,
+                    file_path, file_size, media_type, ohash, phash, md5, duration, video_codec,
                     audio_codec, video_format, width, height, bit_rate,
                     frame_rate
                 ) VALUES (
-                    :file_id, :file_model, :file_basename, :file_parent,
-                    :file_size, :ohash, :phash, :md5, :duration, :video_codec,
+                    :file_id, :scene_id, :file_model, :file_basename, :file_parent,
+                    :file_path, :file_size, :media_type, :ohash, :phash, :md5, :duration, :video_codec,
                     :audio_codec, :video_format, :width, :height, :bit_rate,
                     :frame_rate
                 )
@@ -52,29 +53,32 @@ class DatabaseManager:
     def read_data_from_db(self):
         query = """
         SELECT
-          f.id AS file_id,
-          f.basename AS file_basename,
-          COALESCE((SELECT path FROM folders WHERE id = f.parent_folder_id), '/') AS parent_folder_path,
-          f.size AS file_size,
-          MAX(CASE WHEN ff.type = 'oshash' THEN ff.fingerprint END) AS ohash,
-          MAX(CASE WHEN ff.type = 'phash' THEN ff.fingerprint END) AS phash,
-          MAX(CASE WHEN ff.type = 'md5' THEN ff.fingerprint END) AS md5,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.duration ELSE NULL END AS duration,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.video_codec ELSE NULL END AS video_codec,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.audio_codec ELSE NULL END AS audio_codec,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.format ELSE NULL END AS format,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.width ELSE NULL END AS width,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.height ELSE NULL END AS height,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.bit_rate ELSE NULL END AS bit_rate,
-          CASE WHEN vf.file_id IS NOT NULL THEN vf.frame_rate ELSE NULL END AS frame_rate
+        f.id AS file_id,
+        f.basename AS file_basename,
+        COALESCE((SELECT path FROM folders WHERE id = f.parent_folder_id), '/') AS parent_folder_path,
+        f.size AS file_size,
+        MAX(CASE WHEN ff.type = 'oshash' THEN ff.fingerprint END) AS ohash,
+        MAX(CASE WHEN ff.type = 'phash' THEN ff.fingerprint END) AS phash,
+        MAX(CASE WHEN ff.type = 'md5' THEN ff.fingerprint END) AS md5,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.duration ELSE NULL END AS duration,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.video_codec ELSE NULL END AS video_codec,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.audio_codec ELSE NULL END AS audio_codec,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.format ELSE NULL END AS format,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.width ELSE NULL END AS width,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.height ELSE NULL END AS height,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.bit_rate ELSE NULL END AS bit_rate,
+        CASE WHEN vf.file_id IS NOT NULL THEN vf.frame_rate ELSE NULL END AS frame_rate,
+        sf.scene_id AS scene_id
         FROM
-          files f
+        files f
         LEFT JOIN
-          files_fingerprints ff ON f.id = ff.file_id
+        files_fingerprints ff ON f.id = ff.file_id
         LEFT JOIN
-          video_files vf ON f.id = vf.file_id
+        video_files vf ON f.id = vf.file_id
+        LEFT JOIN
+        scenes_files sf ON f.id = sf.file_id
         GROUP BY
-          f.id, f.basename, parent_folder_path, file_size, duration, video_codec, audio_codec, format, width, height, bit_rate, frame_rate
+        f.id, f.basename, parent_folder_path, file_size, duration, video_codec, audio_codec, format, width, height, bit_rate, frame_rate, scene_id
         """
 
         self.execute_query(query)
@@ -104,14 +108,29 @@ def convert_to_hex(i: int) -> str:
 
 def restructure_rows(rows):
     restructured_rows = []
-    valid_file_ids = []
+
     for row in rows:
+        if row[2] and row[1]:
+            file_path = os.path.join(row[2], row[1])
+
+        if row[1] and (
+            row[1].endswith(tuple(image_extensions))
+            or row[1].endswith(tuple(video_extensions))
+        ):
+            if row[1].endswith(tuple(image_extensions)):
+                media_type = "image"
+            elif row[1].endswith(tuple(video_extensions)):
+                media_type = "video"
+
         reorganized_row = {
             "file_id": row[0] or None,
+            "scene_id": row[15] or None,
             "file_model": row[2].split("\\")[3] if row[2] else None,
             "file_basename": row[1] or None,
             "file_parent": row[2].replace("\\", "/") if row[2] else None,
+            "file_path": file_path or None,
             "file_size": row[3] or None,
+            "media_type": media_type or None,
             "ohash": row[4] or None,
             "phash": convert_to_hex(row[5]) if row[5] else None,
             "md5": row[6] or None,
@@ -125,11 +144,8 @@ def restructure_rows(rows):
             "frame_rate": row[14] or None,
         }
         restructured_rows.append(reorganized_row)
-        valid_file_ids.append(row[0])
 
-    valid_file_ids = list(set(valid_file_ids))
-
-    return restructured_rows, valid_file_ids
+    return restructured_rows
 
 
 def build_database(source_database_path, destination_database_path):
@@ -140,7 +156,7 @@ def build_database(source_database_path, destination_database_path):
         data_rows = source_db.read_data_from_db()
 
     print("Restructuring data for new database.\n")
-    restructured_rows = restructure_rows(data_rows)[0]
+    restructured_rows = restructure_rows(data_rows)
 
     with DatabaseManager(destination_database_path) as destination_db:
         print("Upserting data into new database.")
@@ -156,10 +172,13 @@ def create_empty_database(database_path):
     cursor.execute(
         """CREATE TABLE IF NOT EXISTS files (
             file_id INTEGER PRIMARY KEY,
+            scene_id INTEGER,
             file_model TEXT,
             file_basename TEXT,
             file_parent TEXT,
+            file_path TEXT,
             file_size INTEGER,
+            media_type TEXT,
             ohash TEXT,
             phash TEXT,
             md5 TEXT,
