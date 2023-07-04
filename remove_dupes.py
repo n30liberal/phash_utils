@@ -681,10 +681,8 @@ class pHashProcessor:
                     else:
                         path.unlink()
                         print(f"Deleted file: {path}")
-                    break  # Break out of the loop if the move was successful
+                    break
                 except FileNotFoundError:
-                    # Handle the case when the file doesn't exist
-                    # Optionally, you can add a delay here to avoid busy-waiting
                     pass
                 except PermissionError:
                     print(f"Could not move file to trash: {target_path}")
@@ -720,7 +718,11 @@ def remove_duplicates():
     )
 
     os.system("cls" if os.name == "nt" else "clear")
-    print("Removing duplicates...\n")
+
+    print("Arguments Found:")
+    for arg in vars(args):
+        print(f"{arg}: {getattr(args, arg)}")
+    print()
 
     processor.process_grouped_entries(curated_grouped_entries, auto_delete=auto_delete)
 
