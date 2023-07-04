@@ -184,7 +184,7 @@ class pHashProcessor:
 
         # If whitelist is not None, remove groups where AN entity["file_model"] in a group is not equal to whitelist
         # I.e. at least one entry in a group must match the whitelist, not ALL entries
-        if whitelist not in (None, []):
+        if whitelist is not None and len(whitelist) > 0:
             curated_grouped_entries = {
                 phash: group
                 for phash, group in curated_grouped_entries.items()
@@ -227,16 +227,17 @@ class pHashProcessor:
             }
 
         # filter for min_duration if all entries in a group contain a duration
-        if min_duration is not None:
-            curated_grouped_entries = {
-                phash: group
-                for phash, group in curated_grouped_entries.items()
-                if all(
-                    entry["duration"] is not None and entry["duration"] != "None"
-                    for entry in group
-                )
-                and sum(float(entry["duration"]) for entry in group) >= min_duration
-            }
+        if "image" not in allowed_media_types:
+            if min_duration is not None:
+                curated_grouped_entries = {
+                    phash: group
+                    for phash, group in curated_grouped_entries.items()
+                    if all(
+                        entry["duration"] is not None and entry["duration"] != "None"
+                        for entry in group
+                    )
+                    and sum(float(entry["duration"]) for entry in group) >= min_duration
+                }
 
         return curated_grouped_entries
 
