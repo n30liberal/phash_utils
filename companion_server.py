@@ -7,12 +7,10 @@ from flask import (
     make_response,
     redirect,
 )
-import os, time
 from flask_socketio import SocketIO, send, emit  # noqa f401
 
-from user_config import (
-    blacklisted_phash_path,
-)
+import os, time
+from user_config import blacklisted_phash_path
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -96,29 +94,20 @@ def update_videos():
 @app.route("/video1")
 def serve_video1():
     if video1_path:
-        if os.path.exists(video1_path):
-            # if path ends in jpg, gif, or png, serve as image
-            if (
-                video1_path.endswith(".jpg")
-                or video1_path.endswith(".jpeg")
-                or video1_path.endswith(".gif")
-                or video1_path.endswith(".png")
-            ):
-                response = send_file(
-                    video1_path, mimetype="image/gif", as_attachment=False
-                )
-                response.headers[
-                    "Cache-Control"
-                ] = "no-cache, no-store, must-revalidate"
-                return response
-            else:
-                response = send_file(
-                    video1_path, mimetype="video/mp4", as_attachment=False
-                )
-                response.headers[
-                    "Cache-Control"
-                ] = "no-cache, no-store, must-revalidate"
-                return response
+        # if path ends in jpg, gif, or png, serve as image
+        if (
+            video1_path.endswith(".jpg")
+            or video1_path.endswith(".jpeg")
+            or video1_path.endswith(".gif")
+            or video1_path.endswith(".png")
+        ):
+            response = send_file(video1_path, mimetype="image/gif", as_attachment=False)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
+        else:
+            response = send_file(video1_path, mimetype="video/mp4", as_attachment=False)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
 
     return "Video not found", 404
 
@@ -126,30 +115,20 @@ def serve_video1():
 @app.route("/video2")
 def serve_video2():
     if video2_path:
-        if os.path.exists(video2_path):
-            # if path ends in jpg, gif, or png, serve as image
-            if (
-                video2_path.endswith(".jpg")
-                or video2_path.endswith(".jpeg")
-                or video2_path.endswith(".gif")
-                or video2_path.endswith(".png")
-            ):
-                response = send_file(
-                    video2_path, mimetype="image/gif", as_attachment=False
-                )
-                response.headers[
-                    "Cache-Control"
-                ] = "no-cache, no-store, must-revalidate"
-            else:
-                response = send_file(
-                    video2_path, mimetype="video/mp4", as_attachment=False
-                )
-                response.headers[
-                    "Cache-Control"
-                ] = "no-cache, no-store, must-revalidate"
-                return response
-
-    return "Video not found", 404
+        # if path ends in jpg, gif, or png, serve as image
+        if (
+            video2_path.endswith(".jpg")
+            or video2_path.endswith(".jpeg")
+            or video2_path.endswith(".gif")
+            or video2_path.endswith(".png")
+        ):
+            response = send_file(video2_path, mimetype="image/gif", as_attachment=False)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
+        else:
+            response = send_file(video2_path, mimetype="video/mp4", as_attachment=False)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            return response
 
 
 @app.route("/append-to-blacklisted", methods=["POST"])
