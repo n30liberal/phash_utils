@@ -16,7 +16,7 @@ fill out the user_config.py file with your information.
     - Here we can use the stash database to see which images we have in our system, and then it can generate a phash for each image.
     - ~~The outputted csv has no current use, but in the future we will add the image phashes into our sqlite database, and then we can use that remove images with shared phashes, the same way we do with videos.~~
     - You can now scan for duplicate images *after* running this py file. Just be sure to run remove_dupes.py without the --rebuild-database param.
-    - You also need to pass --alowed-media-types image
+    - You also need to pass --allowed-media-types image
     - Currently it generates 2 files, phashes.csv, which gives us file_id,phash, and then phashed_file_ids.txt which tells the script which images have already been phashed, so it can skip them. This can ideally be done with just the phashes.csv, and it did for a moment, but I broke something and was too lazy to figure out what, so did this as a quick fix.
 
 
