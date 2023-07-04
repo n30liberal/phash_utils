@@ -1,30 +1,76 @@
 import os
 import sys
 import cv2
-import time
+import shutil
 import sqlite3
 import requests
 import argparse
-
 from pathlib import Path
 from build_db import build_and_populate_database
-from user_config import (
-    flask_server,
-    database_path,
-    blacklisted_phash_path,
-    mse_image_threshold,
-    mse_video_threshold,
-    min_group_size,
-    min_group_duration,
+from user_config import flask_server
+from user_config import database_path
+from user_config import blacklisted_phash_path
+from user_config import mse_image_threshold, mse_video_threshold
+from user_config import trash_directory, collections_directory
+
+
+parser = argparse.ArgumentParser(description="Script description")
+
+parser.add_argument(
+    "--remove-duplicates",
+    action="store_true",
+    help="Run the pHash Processor (removes duplicate files)",
+)
+parser.add_argument(
+    "--rebuild-database",
+    action="store_true",
+    help="Rebuild our database with new data from StashApp",
 )
 
-# currently only works for videos!
-# once i get a better solution at adding the image phashes to the database, we can use this to remove duplicate images as well
-# the is_frames_match should already work for images, when that is implemented
-
-OUTPUT_TO_FLASK = (
-    True  # This isn't handled by this script, but by the standalone flask server
+parser.add_argument(
+    "--auto-delete", action="store_true", help="Override value for auto_delete"
 )
+parser.add_argument(
+    "--allowed-media-types", nargs="+", help="Override value for allowed_media_types"
+)
+parser.add_argument(
+    "--min-group-size", type=int, help="Override value for min_group_size"
+)
+parser.add_argument(
+    "--min-group-duration", type=float, help="Override value for min_group_duration"
+)
+parser.add_argument(
+    "--whitelist-models", nargs="+", help="Override value for whitelist_models"
+)
+parser.add_argument(
+    "--output-to-flask", action="store_true", help="Override value for output_to_flask"
+)
+args = parser.parse_args()
+
+if args.auto_delete:
+    auto_delete = args.auto_delete
+else:
+    from user_config import auto_delete
+if args.allowed_media_types:
+    allowed_media_types = args.allowed_media_types
+else:
+    from user_config import allowed_media_types
+if args.min_group_size:
+    min_group_size = args.min_group_size
+else:
+    from user_config import min_group_size
+if args.min_group_duration:
+    min_group_duration = args.min_group_duration
+else:
+    from user_config import min_group_duration
+if args.whitelist_models:
+    whitelist_models = args.whitelist_models
+else:
+    from user_config import whitelist_models
+if args.output_to_flask:
+    output_to_flask = args.output_to_flask
+else:
+    from user_config import output_to_flask
 
 
 def is_server_live():
@@ -35,7 +81,7 @@ def is_server_live():
         return False
 
 
-def update_videos(video1_path, video2_path, phash):
+def update_videos(video1_path, video2_path, phash, video1_scene_id, video2_scene_id):
     video1_name = Path(video1_path).name
     video2_name = Path(video2_path).name
 
@@ -48,10 +94,12 @@ def update_videos(video1_path, video2_path, phash):
                 "video1_name": video1_name,
                 "video2_name": video2_name,
                 "phash": phash,
+                "video1_scene_id": video1_scene_id,
+                "video2_scene_id": video2_scene_id,
             },
         )
         if response.status_code == 200:
-            print("Videos updated successfully")
+            pass
         else:
             print("Failed to update videos")
     except requests.exceptions.RequestException as e:
@@ -77,7 +125,13 @@ class pHashProcessor:
     def read_rows_with_phash(self, conn):
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT file_id, file_model, file_basename, file_parent, file_size, phash, duration, video_codec, audio_codec, video_format, width, height, bit_rate, frame_rate FROM files WHERE phash IS NOT NULL"
+            """
+            SELECT file_id, scene_id, file_model, file_basename, file_parent, file_path, file_size,
+                media_type, phash, duration, video_codec, audio_codec, video_format, width, height,
+                bit_rate, frame_rate
+            FROM files
+            WHERE phash IS NOT NULL
+        """
         )
         rows = cursor.fetchall()
         return rows
@@ -85,10 +139,13 @@ class pHashProcessor:
     def build_dict_from_rows(self, rows):
         column_names = [
             "file_id",
+            "scene_id",
             "file_model",
             "file_basename",
             "file_parent",
+            "file_path",
             "file_size",
+            "media_type",
             "phash",
             "duration",
             "video_codec",
@@ -103,33 +160,55 @@ class pHashProcessor:
         for row in rows:
             item = {}
             for i, value in enumerate(row):
-                if value is None or value == "":
+                if value is None or value == "" or value == "None":
                     item[column_names[i]] = None
                 else:
                     item[column_names[i]] = value
-            item["file_path"] = item["file_parent"] + "/" + item["file_basename"]
             result.append(item)
         return result
 
     def get_curated_grouped_entries(
-        self, result_dict, min_size=None, min_duration=None
+        self, result_dict, min_size=None, min_duration=None, whitelist=None
     ):
         # Create curated grouped_entries with only groups containing more than one entry
         curated_grouped_entries = {
             phash: group for phash, group in result_dict.items() if len(group) > 1
         }
 
-        # Filter out entries with non-existent file paths
+        # If whitelist is not None, remove groups where AN entity["file_model"] in a group is not equal to whitelist
+        # I.e. at least one entry in a group must match the whitelist, not ALL entries
+        if whitelist not in (None, []):
+            curated_grouped_entries = {
+                phash: group
+                for phash, group in curated_grouped_entries.items()
+                if any(entry["file_model"] in whitelist for entry in group)
+            }
+
+        # Filter out entries where phash is None or nothing
         curated_grouped_entries = {
-            phash: [entry for entry in group if os.path.exists(entry["file_path"])]
+            phash: group
             for phash, group in curated_grouped_entries.items()
+            if not any(phash_value in (None, "", "None") for phash_value in (phash,))
         }
 
-        # Remove groups with only one entry
+        # Filter out entries with non-existent file paths
+        # while making sure we only preserve groups with more than one entry
         curated_grouped_entries = {
             phash: group
             for phash, group in curated_grouped_entries.items()
             if len(group) > 1
+            and all(os.path.exists(entry["file_path"]) for entry in group)
+        }
+
+        # we need to remove groups that don't match the allowed_media_types
+        # if all entries in a group have a media_type of "video", then we can keep the group
+        # if all entries in a group have a media_type of "image", then we remove the group
+        # if a group has a mix; i.e. some entries are "video" and some are "image", or some are "None", then we remove the group
+        curated_grouped_entries = {
+            phash: group
+            for phash, group in curated_grouped_entries.items()
+            if all(entry["media_type"] in allowed_media_types for entry in group)
+            and len(set(entry["media_type"] for entry in group)) == 1
         }
 
         # if min_size, filter out groups with total size less than min_size
@@ -140,12 +219,16 @@ class pHashProcessor:
                 if sum(entry["file_size"] for entry in group) >= min_size
             }
 
-        # if min_duration, filter out groups with total duration less than min_duration
+        # filter for min_duration if all entries in a group contain a duration
         if min_duration is not None:
             curated_grouped_entries = {
                 phash: group
                 for phash, group in curated_grouped_entries.items()
-                if round(sum(entry["duration"] for entry in group)) >= min_duration
+                if all(
+                    entry["duration"] is not None and entry["duration"] != "None"
+                    for entry in group
+                )
+                and sum(float(entry["duration"]) for entry in group) >= min_duration
             }
 
         return curated_grouped_entries
@@ -164,7 +247,17 @@ class pHashProcessor:
 
     def process_grouped_entries(self, grouped_entries, auto_delete=False):
         # print how many groups exist in curated_grouped_entries
-        print(f"Number of groups: {len(grouped_entries)}\n")
+        print(f"Number of groups: {len(grouped_entries)}")
+
+        # print the total amount of space we can potentially save by adding the file sizes of each group, minus the size of the largest file in each group
+        theoretical_space_saved = sum(
+            sum(entry["file_size"] for entry in group)
+            - max(entry["file_size"] for entry in group)
+            for group in grouped_entries.values()
+        )
+        print(
+            f"Theoretical space to save: {self.readable_size(theoretical_space_saved)}\n"
+        )
 
         # Calculate summed file size for each group
         group_sizes = {
@@ -213,14 +306,34 @@ class pHashProcessor:
         return biggest_file
 
     def process_group(self, group, auto_delete=False):
+        # Determine media type of group
+        # Each entity contains a media_type key with a value of "video", "image", or "None"
+        # if all (entry["media_type"] == "video" for entry in group) then we can set media_type to "video"
+        # if all (entry["media_type"] == "image" for entry in group) then we can set media_type to "image"
+        # if all (entry["media_type"] == "None" for entry in group) then we can set media_type to "None"
+        # if any (entry["media_type"] == "video" for entry in group) and any (entry["media_type"] == "image" for entry in group) then we can set media_type to "mixed"
+
+        media_type = (
+            "video"
+            if all(entry["media_type"] == "video" for entry in group)
+            else "image"
+            if all(entry["media_type"] == "image" for entry in group)
+            else "None"
+            if all(entry["media_type"] == "None" for entry in group)
+            else "mixed"
+        )
+
         sorted_files = self.sort_files_by_size(group)
         premium_files, non_premium_files = self.separate_premium_and_non_premium_files(
             sorted_files
         )
 
         if auto_delete:
+            # find out if every entry in the group has a duration, if not set media_type to True
+
             if not self.is_frames_match(
-                [entry["file_path"] for entry in premium_files + non_premium_files]
+                [entry["file_path"] for entry in premium_files + non_premium_files],
+                media_type,
             ):
                 print("In auto-delete mode.")
                 print("Frames do not match. Skipping group.\n")
@@ -231,20 +344,29 @@ class pHashProcessor:
 
         if all_same_model:
             self.process_same_model_files(
-                biggest_file, premium_files, non_premium_files, auto_delete
+                biggest_file,
+                premium_files,
+                non_premium_files,
+                auto_delete,
+                media_type,
             )
         else:
             self.process_different_model_files(
-                group, biggest_file, premium_files, non_premium_files, auto_delete
+                group,
+                biggest_file,
+                premium_files,
+                non_premium_files,
+                auto_delete,
+                media_type,
             )
 
     def process_same_model_files(
-        self, biggest_file, premium_files, non_premium_files, auto_delete
+        self, biggest_file, premium_files, non_premium_files, auto_delete, media_type
     ):
         for i, entry in enumerate(premium_files + non_premium_files, start=1):
             if entry != biggest_file:
                 frames_match = self.is_frames_match(
-                    [entry["file_path"], biggest_file["file_path"]]
+                    [entry["file_path"], biggest_file["file_path"]], media_type
                 )
 
                 # here is where we build the window to display the data
@@ -264,16 +386,38 @@ class pHashProcessor:
                 print(f"File Model: {biggest_file['file_model']}")
                 print(f"File Path: {biggest_file['file_path']}")
                 print(f"File Size: {self.readable_size(biggest_file['file_size'])}")
-                print(
-                    f"File Duration: {self.readable_duration(biggest_file['duration'])}\n"
-                )
+
+                if biggest_file["duration"] is not None:
+                    print(
+                        f"File Duration: {self.readable_duration(biggest_file['duration'])}\n"
+                    )
+                else:
+                    print()
 
                 print("Ready to delete:")
                 print(f"Frames Match: {frames_match}")
                 print(f"File Model: {entry['file_model']}")
                 print(f"File Path: {entry['file_path']}")
                 print(f"File Size: {self.readable_size(entry['file_size'])}")
-                print(f"File Duration: {self.readable_duration(entry['duration'])}\n")
+
+                if entry["duration"] is not None:
+                    print(
+                        f"File Duration: {self.readable_duration(entry['duration'])}\n"
+                    )
+                else:
+                    print()
+
+                if output_to_flask:
+                    if is_server_live():
+                        video1_path = biggest_file["file_path"]
+                        video2_path = entry["file_path"]
+                        update_videos(
+                            video1_path,
+                            video2_path,
+                            entry["phash"],
+                            biggest_file["scene_id"],
+                            entry["scene_id"],
+                        )
 
                 if i < len(non_premium_files):
                     print(f"File [{i} of {len(non_premium_files)}]")
@@ -289,11 +433,19 @@ class pHashProcessor:
                         print()
 
     def process_different_model_files(
-        self, group, biggest_file, premium_files, non_premium_files, auto_delete
+        self,
+        group,
+        biggest_file,
+        premium_files,
+        non_premium_files,
+        auto_delete,
+        media_type,
     ):
         if not self.is_frames_match(
-            [entry["file_path"] for entry in premium_files + non_premium_files]
+            [entry["file_path"] for entry in premium_files + non_premium_files],
+            media_type,
         ):
+            print(f"pHash: {biggest_file['phash']}")
             print("Frames do not match for all files in group. Be weary!\n")
 
         file_models = set(entry["file_model"] for entry in group)
@@ -307,17 +459,20 @@ class pHashProcessor:
             )
 
             frames_match = self.is_frames_match(
-                [biggest_file_with_model["file_path"], biggest_file["file_path"]]
+                [biggest_file_with_model["file_path"], biggest_file["file_path"]],
+                media_type,
             )
 
-            # get the phash for the biggest file with the model
-
-            if OUTPUT_TO_FLASK:
+            if output_to_flask:
                 if is_server_live():
                     video1_path = str(biggest_file["file_path"])
                     video2_path = str(biggest_file_with_model["file_path"])
                     update_videos(
-                        video1_path, video2_path, biggest_file_with_model["phash"]
+                        video1_path,
+                        video2_path,
+                        biggest_file_with_model["phash"],
+                        biggest_file["scene_id"],
+                        biggest_file_with_model["scene_id"],
                     )
 
             print(f"Frames Match: {frames_match}")
@@ -326,52 +481,68 @@ class pHashProcessor:
             print(
                 f"File Size: {self.readable_size(biggest_file_with_model['file_size'])}"
             )
-            print(
-                f"File Duration: {self.readable_duration(biggest_file_with_model['duration'])}\n"
-            )
-
-        chosen_model = input("Enter the file model you want to preserve: ")
-        print()
-
-        for entry in group:
-            if entry["file_model"] != chosen_model:
-                frames_match = self.is_frames_match(
-                    [entry["file_path"], biggest_file["file_path"]]
+            if biggest_file_with_model["duration"] is not None:
+                print(
+                    f"File Duration: {self.readable_duration(biggest_file_with_model['duration'])}\n"
                 )
-                print("Ready to delete:")
-                print(f"Frames Match: {frames_match}")
-                print(f"File Model: {entry['file_model']}")
-                print(f"File Path: {entry['file_path']}")
-                print(f"File Size: {self.readable_size(entry['file_size'])}")
-                print(f"File Duration: {self.readable_duration(entry['duration'])}\n")
+            else:
+                print()
 
-                if OUTPUT_TO_FLASK:
-                    if is_server_live():
-                        video1_path = biggest_file["file_path"]
-                        video2_path = entry["file_path"]
-                        update_videos(video1_path, video2_path, entry["phash"])
+        if not auto_delete:
+            chosen_model = input("Enter the file model you want to preserve: ")
+            print()
 
-                if auto_delete:
-                    if frames_match:
-                        self.remove_file(Path(entry["file_path"]))
+            for entry in group:
+                if entry["file_model"] != chosen_model:
+                    frames_match = self.is_frames_match(
+                        [entry["file_path"], biggest_file["file_path"]],
+                        media_type,
+                    )
+                    print("Ready to delete:")
+                    print(f"Frames Match: {frames_match}")
+                    print(f"File Model: {entry['file_model']}")
+                    print(f"File Path: {entry['file_path']}")
+                    print(f"File Size: {self.readable_size(entry['file_size'])}")
+                    if entry["duration"] is not None:
+                        print(
+                            f"File Duration: {self.readable_duration(entry['duration'])}\n"
+                        )
+                    else:
                         print()
-                else:
-                    user_choice = input("Do you want to delete this file? (y/n): ")
-                    if user_choice.lower() != "n":
-                        self.remove_file(Path(entry["file_path"]))
-                        print()
+
+                    if output_to_flask:
+                        if is_server_live():
+                            video1_path = biggest_file["file_path"]
+                            video2_path = entry["file_path"]
+                            update_videos(
+                                video1_path,
+                                video2_path,
+                                entry["phash"],
+                                biggest_file["scene_id"],
+                                entry["scene_id"],
+                            )
+
+                    if auto_delete:
+                        if frames_match:
+                            self.remove_file(Path(entry["file_path"]))
+                            print()
+                    else:
+                        user_choice = input("Do you want to delete this file? (y/n): ")
+                        if user_choice.lower() != "n":
+                            self.remove_file(Path(entry["file_path"]))
+                            print()
 
     def process_delete_files(self, group, auto_delete=False):
         self.process_group(group, auto_delete)
 
-    def is_frames_match(self, file_paths):
+    def is_frames_match(self, file_paths, media_type=None):
         def is_video(path):
-            # Check if the given file path corresponds to a video file
-            return cv2.VideoCapture(path).isOpened()
+            if media_type == "video":
+                return True
 
         def is_image(path):
-            # Check if the given file path corresponds to an image file
-            return cv2.imread(path) is not None
+            if media_type == "image":
+                return True
 
         def is_video_frames_match(video_paths):
             try:
@@ -450,6 +621,8 @@ class pHashProcessor:
 
             # Unsupported input type
             print("Unsupported input type")
+            print(f"Input paths: {file_paths}")
+            input("Press Enter to continue...")
             return False
 
         except Exception as e:
@@ -478,15 +651,32 @@ class pHashProcessor:
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def remove_file(self, file_path):
+        # no longer destroys files, just moves them to a trash folder
+        # while preserving the directory structure so they can be easily restored
+
         path = Path(file_path)
+
         if path.exists():
-            while path.exists():
+            relative_path = path.relative_to(collections_directory)
+
+            # Create the target directory structure inside the trash directory
+            target_dir = trash_directory / relative_path.parent
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Move the file to the target directory
+            target_path = target_dir / path.name
+
+            while True:
                 try:
-                    path.unlink()
-                    print(f"Deleted file: {path}")
+                    shutil.move(str(path), str(target_path))
+                    print(f"Moved file to trash: {target_path}")
+                    break  # Break out of the loop if the move was successful
+                except FileNotFoundError:
+                    # Handle the case when the file doesn't exist
+                    # Optionally, you can add a delay here to avoid busy-waiting
+                    pass
                 except PermissionError:
-                    print(f"Error attempting to delete {path.name}.")
-                    time.sleep(1)
+                    print(f"Could not move file to trash: {target_path}")
 
     def move_file(self, file_path, destination):
         source_path = Path(file_path)
@@ -512,32 +702,22 @@ def remove_duplicates():
     )
 
     curated_grouped_entries = processor.get_curated_grouped_entries(
-        grouped_entries, min_size=min_group_size, min_duration=min_group_duration
+        grouped_entries,
+        min_size=min_group_size,
+        min_duration=min_group_duration,
+        whitelist=whitelist_models,
     )
 
     os.system("cls" if os.name == "nt" else "clear")
     print("Removing duplicates...\n")
 
-    processor.process_grouped_entries(curated_grouped_entries, auto_delete=False)
+    processor.process_grouped_entries(curated_grouped_entries, auto_delete=auto_delete)
 
     print()
 
 
 def main():
     os.system("cls" if os.name == "nt" else "clear")
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--remove-duplicates",
-        action="store_true",
-        help="Run the pHash Processor (removes duplicate files)",
-    )
-    parser.add_argument(
-        "--rebuild-database",
-        action="store_true",
-        help="Rebuild our database with new data from StashApp",
-    )
-
-    args = parser.parse_args()
 
     if args.rebuild_database:
         build_and_populate_database()

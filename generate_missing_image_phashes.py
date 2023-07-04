@@ -1,3 +1,4 @@
+import csv
 import sqlite3
 import imagehash
 from PIL import Image
@@ -58,6 +59,33 @@ def process_image(row, processed_images_path):
         return None
 
 
+def update_database_with_phash():
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+
+    with open(phashes_path, "r") as csv_file:
+        csv_reader = csv.reader(csv_file)
+        rows = list(csv_reader)
+
+        total_rows = len(rows) - 1  # Exclude the header row
+        print(f"Found {total_rows} rows in {phashes_path}")
+
+        for row in rows[1:]:  # Start from index 1 to skip the header row
+            file_id = row[0]
+            phash = row[1]
+
+            if not phash:
+                continue
+
+            cursor.execute(
+                "UPDATE files SET phash = ? WHERE file_id = ? AND (phash IS NULL OR phash = '')",
+                (phash, file_id),
+            )
+
+    conn.commit()
+    conn.close()
+
+
 def main():
     image_data = fetch_image_data(database_path, processed_images_path)
     progress_bar = tqdm(total=len(image_data))
@@ -88,6 +116,12 @@ def main():
             return
 
     progress_bar.close()
+    print()
+
+    print("Updating database with phash values...")
+    update_database_with_phash()
+    print("Done.")
+
     print()
     input("Press Enter to exit...")
 
