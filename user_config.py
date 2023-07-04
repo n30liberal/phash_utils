@@ -15,6 +15,7 @@ database_path = data_directory / "stash_data.sqlite"
 phashes_path = data_directory / "phashes.csv"
 processed_images_path = data_directory / "phashed_file_ids.txt"
 
+direct_delete = False
 trash_directory = Path("path/to/trash/directory") # folder you dedicate to trash, so you can easily restore stuff
 collections_directory = Path("path/to/your/isos") # main root folder for your collections
 
