@@ -46,8 +46,8 @@ def fetch_image_data(database_path, processed_images_path):
 def process_image(row, processed_images_path):
     try:
         file_id = row[0]
-        file_path = Path(row[1])
-        phash = calculate_phash(str(file_path))
+        file_path = row[1]
+        phash = calculate_phash(file_path)
 
         with open(processed_images_path, "a") as processed_file:
             processed_file.write(f"{file_id}\n")
