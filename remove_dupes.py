@@ -31,6 +31,9 @@ parser.add_argument(
     "--auto-delete", action="store_true", help="Override value for auto_delete"
 )
 parser.add_argument(
+    "--direct-delete", action="store_true", help="Override value for direct_delete"
+)
+parser.add_argument(
     "--allowed-media-types", nargs="+", help="Override value for allowed_media_types"
 )
 parser.add_argument(
@@ -51,6 +54,10 @@ if args.auto_delete:
     auto_delete = args.auto_delete
 else:
     from user_config import auto_delete
+if args.direct_delete:
+    direct_delete = args.direct_delete
+else:
+    from user_config import direct_delete
 if args.allowed_media_types:
     allowed_media_types = args.allowed_media_types
 else:
@@ -668,8 +675,12 @@ class pHashProcessor:
 
             while True:
                 try:
-                    shutil.move(str(path), str(target_path))
-                    print(f"Moved file to trash: {target_path}")
+                    if not direct_delete:
+                        shutil.move(str(path), str(target_path))
+                        print(f"Moved file to trash: {target_path}")
+                    else:
+                        path.unlink()
+                        print(f"Deleted file: {path}")
                     break  # Break out of the loop if the move was successful
                 except FileNotFoundError:
                     # Handle the case when the file doesn't exist
