@@ -3,11 +3,10 @@ import sys
 import cv2
 import shutil
 import sqlite3
-import requests
 import argparse
+import subprocess
 from pathlib import Path
 from build_db import build_and_populate_database
-from user_config import flask_server
 from user_config import database_path
 from user_config import blacklisted_phash_path
 from user_config import mse_image_threshold, mse_video_threshold
@@ -46,7 +45,12 @@ parser.add_argument(
     "--whitelist-models", nargs="+", help="Override value for whitelist_models"
 )
 parser.add_argument(
-    "--output-to-flask", action="store_true", help="Override value for output_to_flask"
+    "--blacklist-models", nargs="+", help="Override value for blacklist_models"
+)
+parser.add_argument(
+    "--output-to-window",
+    action="store_true",
+    help="Override value for output_to_window",
 )
 args = parser.parse_args()
 
@@ -74,43 +78,68 @@ if args.whitelist_models:
     whitelist_models = args.whitelist_models
 else:
     from user_config import whitelist_models
-if args.output_to_flask:
-    output_to_flask = args.output_to_flask
+if args.blacklist_models:
+    blacklist_models = args.blacklist_models
 else:
-    from user_config import output_to_flask
+    from user_config import blacklist_models
+if args.output_to_window:
+    output_to_window = args.output_to_window
+else:
+    from user_config import output_to_window
 
 
-def is_server_live():
-    try:
-        response = requests.get(f"{flask_server}/health-check")
-        return response.status_code == 200
-    except requests.exceptions.ConnectionError:
-        return False
+def update_videos(biggest_file_entry, smaller_file_entry):
+    biggest_file_phash = str(biggest_file_entry["phash"])
+    biggest_file_id = str(biggest_file_entry["file_id"])
+    biggest_file_scene_id = str(biggest_file_entry["scene_id"])
+    biggest_file_path = str(biggest_file_entry["file_path"])
+    biggest_file_media_type = str(biggest_file_entry["media_type"])
+    biggest_file_size = str(biggest_file_entry["file_size"])
+    biggest_file_duration = str(biggest_file_entry["duration"])  # noqa not in use yet
 
+    smaller_file_phash = str(smaller_file_entry["phash"])
+    smaller_file_id = str(smaller_file_entry["file_id"])
+    smaller_file_scene_id = str(smaller_file_entry["scene_id"])
+    smaller_file_path = str(smaller_file_entry["file_path"])
+    smaller_file_media_type = str(smaller_file_entry["media_type"])
+    smaller_file_size = str(smaller_file_entry["file_size"])
+    smaller_file_duration = str(smaller_file_entry["duration"])  # noqa not in use yet
 
-def update_videos(video1_path, video2_path, phash, video1_scene_id, video2_scene_id):
-    video1_name = Path(video1_path).name
-    video2_name = Path(video2_path).name
+    # now we need to subprocess and run another python script, without waiting for it to finish
+    # usage: file_comparison_gui.py [-h] --biggest_file_phash BIGGEST_FILE_PHASH --biggest_file_id BIGGEST_FILE_ID --biggest_file_scene_id BIGGEST_FILE_SCENE_ID --biggest_file_path BIGGEST_FILE_PATH --biggest_file_media_type BIGGEST_FILE_MEDIA_TYPE
+    # --biggest_file_size BIGGEST_FILE_SIZE --smallest_file_phash SMALLEST_FILE_PHASH --smallest_file_id SMALLEST_FILE_ID --smallest_file_scene_id SMALLEST_FILE_SCENE_ID --smallest_file_path SMALLEST_FILE_PATH
+    # --smallest_file_media_type SMALLEST_FILE_MEDIA_TYPE --smallest_file_size SMALLEST_FILE_SIZE
 
-    try:
-        response = requests.get(
-            f"{flask_server}/update",
-            params={
-                "video1_path": video1_path,
-                "video2_path": video2_path,
-                "video1_name": video1_name,
-                "video2_name": video2_name,
-                "phash": phash,
-                "video1_scene_id": video1_scene_id,
-                "video2_scene_id": video2_scene_id,
-            },
-        )
-        if response.status_code == 200:
-            pass
-        else:
-            print("Failed to update videos")
-    except requests.exceptions.RequestException as e:
-        print(e)
+    subprocess.Popen(
+        [
+            "python",
+            "file_comparison_gui.py",
+            "--biggest_file_phash",
+            biggest_file_phash,
+            "--biggest_file_id",
+            biggest_file_id,
+            "--biggest_file_scene_id",
+            biggest_file_scene_id,
+            "--biggest_file_path",
+            biggest_file_path,
+            "--biggest_file_media_type",
+            biggest_file_media_type,
+            "--biggest_file_size",
+            biggest_file_size,
+            "--smallest_file_phash",
+            smaller_file_phash,
+            "--smallest_file_id",
+            smaller_file_id,
+            "--smallest_file_scene_id",
+            smaller_file_scene_id,
+            "--smallest_file_path",
+            smaller_file_path,
+            "--smallest_file_media_type",
+            smaller_file_media_type,
+            "--smallest_file_size",
+            smaller_file_size,
+        ]
+    )
 
 
 def file_to_list(file_path):
@@ -175,7 +204,12 @@ class pHashProcessor:
         return result
 
     def get_curated_grouped_entries(
-        self, result_dict, min_size=None, min_duration=None, whitelist=None
+        self,
+        result_dict,
+        min_size=None,
+        min_duration=None,
+        whitelist=None,
+        blacklist=None,
     ):
         # Create curated grouped_entries with only groups containing more than one entry
         curated_grouped_entries = {
@@ -184,11 +218,20 @@ class pHashProcessor:
 
         # If whitelist is not None, remove groups where AN entity["file_model"] in a group is not equal to whitelist
         # I.e. at least one entry in a group must match the whitelist, not ALL entries
-        if whitelist is not None and len(whitelist) > 0:
+        if whitelist not in (None, []):
             curated_grouped_entries = {
                 phash: group
                 for phash, group in curated_grouped_entries.items()
                 if any(entry["file_model"] in whitelist for entry in group)
+            }
+
+        # if blacklist is not none or in [], remove all groups where at least one entry in the group is in the blacklist
+        # i.e. at least one entry in a group must match the blacklist, not ALL entries
+        if blacklist not in (None, []):
+            curated_grouped_entries = {
+                phash: group
+                for phash, group in curated_grouped_entries.items()
+                if not any(entry["file_model"] in blacklist_models for entry in group)
             }
 
         # Filter out entries where phash is None or nothing
@@ -227,6 +270,7 @@ class pHashProcessor:
             }
 
         # filter for min_duration if all entries in a group contain a duration
+        # idk whats wrong with my logic, so it only works if "image" is not in allowed_media_types
         if "image" not in allowed_media_types:
             if min_duration is not None:
                 curated_grouped_entries = {
@@ -359,6 +403,11 @@ class pHashProcessor:
                 media_type,
             )
         else:
+            if auto_delete:
+                print("In auto-delete mode.")
+                print("Different models. Skipping group.\n")
+                return
+
             self.process_different_model_files(
                 group,
                 biggest_file,
@@ -415,25 +464,19 @@ class pHashProcessor:
                 else:
                     print()
 
-                if output_to_flask:
-                    if is_server_live():
-                        video1_path = biggest_file["file_path"]
-                        video2_path = entry["file_path"]
-                        update_videos(
-                            video1_path,
-                            video2_path,
-                            entry["phash"],
-                            biggest_file["scene_id"],
-                            entry["scene_id"],
-                        )
+                if output_to_window:
+                    update_videos(biggest_file, entry)
 
                 if i < len(non_premium_files):
                     print(f"File [{i} of {len(non_premium_files)}]")
 
                 if auto_delete:
                     if frames_match:
+                        print("Frames match. Deleting file.")
                         self.remove_file(Path(entry["file_path"]))
                         print()
+                    else:
+                        print("Frames do not match. Skipping file.")
                 else:
                     user_choice = input("Do you want to delete this file? (y/n): ")
                     if user_choice.lower() != "n":
@@ -456,6 +499,11 @@ class pHashProcessor:
             print(f"pHash: {biggest_file['phash']}")
             print("Frames do not match for all files in group. Be weary!\n")
 
+            if auto_delete:
+                print("In auto-delete mode.")
+                print("Frames do not match. Skipping group.\n")
+                return
+
         file_models = set(entry["file_model"] for entry in group)
 
         for file_model in file_models:
@@ -471,17 +519,13 @@ class pHashProcessor:
                 media_type,
             )
 
-            if output_to_flask:
-                if is_server_live():
-                    video1_path = str(biggest_file["file_path"])
-                    video2_path = str(biggest_file_with_model["file_path"])
-                    update_videos(
-                        video1_path,
-                        video2_path,
-                        biggest_file_with_model["phash"],
-                        biggest_file["scene_id"],
-                        biggest_file_with_model["scene_id"],
-                    )
+            if auto_delete:
+                if not frames_match:
+                    print("Frames do not match. Skipping group.\n")
+                    return
+
+            if output_to_window:
+                update_videos(biggest_file, biggest_file_with_model)
 
             print(f"Frames Match: {frames_match}")
             print(f"File Model: {file_model}")
@@ -518,22 +562,16 @@ class pHashProcessor:
                     else:
                         print()
 
-                    if output_to_flask:
-                        if is_server_live():
-                            video1_path = biggest_file["file_path"]
-                            video2_path = entry["file_path"]
-                            update_videos(
-                                video1_path,
-                                video2_path,
-                                entry["phash"],
-                                biggest_file["scene_id"],
-                                entry["scene_id"],
-                            )
+                    if output_to_window:
+                        update_videos(biggest_file, entry)
 
                     if auto_delete:
                         if frames_match:
+                            print("Frames match. Deleting file.")
                             self.remove_file(Path(entry["file_path"]))
                             print()
+                        else:
+                            print("Frames do not match. Skipping file.")
                     else:
                         user_choice = input("Do you want to delete this file? (y/n): ")
                         if user_choice.lower() != "n":
@@ -588,35 +626,48 @@ class pHashProcessor:
                 return False
 
         def is_image_frames_match(image_paths):
+            patch_size = 128
             try:
                 # Read the first image
                 frame1 = cv2.imread(image_paths[0])
+
+                # Check if the first image could not be read
+                if frame1 is None:
+                    return False
 
                 # Iterate through the rest of the image paths
                 for path in image_paths[1:]:
                     # Read the current image
                     frame2 = cv2.imread(path)
 
-                    # Check if images could not be read
-                    if frame1 is None or frame2 is None:
+                    # Check if the current image could not be read
+                    if frame2 is None:
                         return False
 
-                    # Resize the images if they have different sizes
-                    if frame1.shape != frame2.shape:
-                        frame1 = cv2.resize(frame1, frame2.shape[:2][::-1])
+                    # Compare image patches instead of resizing the entire images
+                    for i in range(0, frame1.shape[0], patch_size):
+                        for j in range(0, frame1.shape[1], patch_size):
+                            # Extract image patches
+                            patch1 = frame1[i : i + patch_size, j : j + patch_size]
+                            patch2 = frame2[i : i + patch_size, j : j + patch_size]
 
-                    # Compare the images using mean squared error (MSE)
-                    mse = ((frame1 - frame2) ** 2).mean()
+                            # Resize the patches if they have different sizes
+                            if patch1.shape != patch2.shape:
+                                patch1 = cv2.resize(patch1, patch2.shape[:2][::-1])
 
-                    # Check if the images are roughly the same
-                    if mse > mse_image_threshold:
-                        return False
+                            # Compare the patches using mean squared error (MSE)
+                            mse = ((patch1 - patch2) ** 2).mean()
 
-                return True
+                            # Check if the patches are roughly the same
+                            if mse > mse_image_threshold:
+                                return False
 
             except Exception as e:
-                print(f"An error occurred: {str(e)}")
+                # Handle any potential exceptions here
+                print(f"Error occurred: {e}")
                 return False
+
+            return True
 
         try:
             # Check if the input paths correspond to videos
@@ -716,6 +767,7 @@ def remove_duplicates():
         min_size=min_group_size,
         min_duration=min_group_duration,
         whitelist=whitelist_models,
+        blacklist=blacklist_models,
     )
 
     os.system("cls" if os.name == "nt" else "clear")
