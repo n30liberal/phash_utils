@@ -85,7 +85,7 @@ parser.add_argument(
     "--biggest_file_scene_id",
     type=int,
     help="The scene id of the biggest file",
-    required=True,
+    required=False,
 )
 parser.add_argument(
     "--biggest_file_path",
@@ -122,7 +122,7 @@ parser.add_argument(
     "--smallest_file_scene_id",
     type=int,
     help="The scene id of the smallest file",
-    required=True,
+    required=False,
 )
 parser.add_argument(
     "--smallest_file_path",
