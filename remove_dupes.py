@@ -91,7 +91,7 @@ else:
 def update_videos(biggest_file_entry, smaller_file_entry):
     biggest_file_phash = str(biggest_file_entry["phash"])
     biggest_file_id = str(biggest_file_entry["file_id"])
-    biggest_file_scene_id = str(biggest_file_entry["scene_id"])
+    biggest_file_scene_id = str(biggest_file_entry["scene_id"])  # noqa not in use yet
     biggest_file_path = str(biggest_file_entry["file_path"])
     biggest_file_media_type = str(biggest_file_entry["media_type"])
     biggest_file_size = str(biggest_file_entry["file_size"])
@@ -99,7 +99,7 @@ def update_videos(biggest_file_entry, smaller_file_entry):
 
     smaller_file_phash = str(smaller_file_entry["phash"])
     smaller_file_id = str(smaller_file_entry["file_id"])
-    smaller_file_scene_id = str(smaller_file_entry["scene_id"])
+    smaller_file_scene_id = str(smaller_file_entry["scene_id"])  # noqa not in use yet
     smaller_file_path = str(smaller_file_entry["file_path"])
     smaller_file_media_type = str(smaller_file_entry["media_type"])
     smaller_file_size = str(smaller_file_entry["file_size"])
@@ -118,8 +118,6 @@ def update_videos(biggest_file_entry, smaller_file_entry):
             biggest_file_phash,
             "--biggest_file_id",
             biggest_file_id,
-            "--biggest_file_scene_id",
-            biggest_file_scene_id,
             "--biggest_file_path",
             biggest_file_path,
             "--biggest_file_media_type",
@@ -130,8 +128,6 @@ def update_videos(biggest_file_entry, smaller_file_entry):
             smaller_file_phash,
             "--smallest_file_id",
             smaller_file_id,
-            "--smallest_file_scene_id",
-            smaller_file_scene_id,
             "--smallest_file_path",
             smaller_file_path,
             "--smallest_file_media_type",
@@ -523,9 +519,6 @@ class pHashProcessor:
                 if not frames_match:
                     print("Frames do not match. Skipping group.\n")
                     return
-
-            if output_to_window:
-                update_videos(biggest_file, biggest_file_with_model)
 
             print(f"Frames Match: {frames_match}")
             print(f"File Model: {file_model}")
