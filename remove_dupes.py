@@ -114,7 +114,7 @@ else:
     from user_config import mse_video_threshold
 
 
-def update_videos(biggest_file_entry, smaller_file_entry):
+def prime_media_output(biggest_file_entry, smaller_file_entry):
     data = {
         "biggest_file_entry": biggest_file_entry,
         "smaller_file_entry": smaller_file_entry,
@@ -427,7 +427,7 @@ class pHashProcessor:
                     print()
 
                 if output_to_window:
-                    update_videos(biggest_file, entry)
+                    prime_media_output(biggest_file, entry)
 
                 if i < len(non_premium_files):
                     print(f"File [{i} of {len(non_premium_files)}]")
@@ -482,7 +482,7 @@ class pHashProcessor:
             )
 
             if output_to_window:
-                update_videos(biggest_file, biggest_file_with_model)
+                prime_media_output(biggest_file, biggest_file_with_model)
 
             if auto_delete:
                 if not frames_match:
