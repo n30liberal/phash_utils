@@ -9,8 +9,10 @@ import subprocess
 
 from pathlib import Path
 from build_db import build_and_populate_database
+
 from user_config import database_path
 from user_config import blacklisted_phash_path
+from user_config import prioritized_directories
 from user_config import readable_size, readable_duration
 from user_config import mse_image_threshold, mse_video_threshold
 from user_config import trash_directory, collections_directory
@@ -301,7 +303,9 @@ class pHashProcessor:
         non_premium_files = []
         for entry in sorted_files:
             file_path = Path(entry["file_path"])
-            if file_path.parent.name == "premium":
+            if file_path.parent.name.lower() in [
+                directory.lower() for directory in prioritized_directories
+            ]:
                 premium_files.append(entry)
             else:
                 non_premium_files.append(entry)
