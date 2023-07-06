@@ -11,6 +11,7 @@ import tkinter.messagebox as messagebox
 
 from pathlib import Path
 from PIL import ImageTk, Image
+
 from user_config import blacklisted_phash_path
 from user_config import readable_size, readable_duration
 from user_config import extracted_frames_path, collections_directory
