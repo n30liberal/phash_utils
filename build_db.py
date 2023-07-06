@@ -1,6 +1,7 @@
-import sqlite3
-import time
 import os
+import time
+import sqlite3
+
 from user_config import database_path, stash_database_path
 from user_config import image_extensions, video_extensions
 
@@ -208,7 +209,7 @@ def build_and_populate_database():
     # we dont keep persistant information in the database, so we can delete it each time we update it
     # especially since it builds in less than 30 seconds
     # ideally we dont want to rebuild, but instead remove entries that no longer exist in the source database, and add new entries
-    # eventually we will, once i figure out the best way to store my generated image phashes long term
+    # eventually we will
 
     if output_database_path.exists():
         if DESTRUCTIVE_RUN:
