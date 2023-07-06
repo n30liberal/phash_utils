@@ -45,6 +45,7 @@ output_to_window = False
 mse_image_threshold = 40
 mse_video_threshold = 40
 
+prioritized_directories = ["premium"]
 allowed_media_types = ["video"]
 min_group_size = 0 * 1024 * 1024
 min_group_duration = 0
