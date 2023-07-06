@@ -1,17 +1,21 @@
 import os
 import sys
 import cv2
+import json
 import shutil
 import sqlite3
 import argparse
 import subprocess
+
 from pathlib import Path
 from build_db import build_and_populate_database
 from user_config import database_path
 from user_config import blacklisted_phash_path
+from user_config import readable_size, readable_duration
 from user_config import mse_image_threshold, mse_video_threshold
 from user_config import trash_directory, collections_directory
 
+os.system("title remove_dupes.py")
 
 parser = argparse.ArgumentParser(description="Script description")
 
@@ -25,7 +29,6 @@ parser.add_argument(
     action="store_true",
     help="Rebuild our database with new data from StashApp",
 )
-
 parser.add_argument(
     "--auto-delete", action="store_true", help="Override value for auto_delete"
 )
@@ -89,53 +92,16 @@ else:
 
 
 def update_videos(biggest_file_entry, smaller_file_entry):
-    biggest_file_phash = str(biggest_file_entry["phash"])
-    biggest_file_id = str(biggest_file_entry["file_id"])
-    biggest_file_scene_id = str(biggest_file_entry["scene_id"])  # noqa not in use yet
-    biggest_file_path = str(biggest_file_entry["file_path"])
-    biggest_file_media_type = str(biggest_file_entry["media_type"])
-    biggest_file_size = str(biggest_file_entry["file_size"])
-    biggest_file_duration = str(biggest_file_entry["duration"])  # noqa not in use yet
+    data = {
+        "biggest_file_entry": biggest_file_entry,
+        "smaller_file_entry": smaller_file_entry,
+    }
 
-    smaller_file_phash = str(smaller_file_entry["phash"])
-    smaller_file_id = str(smaller_file_entry["file_id"])
-    smaller_file_scene_id = str(smaller_file_entry["scene_id"])  # noqa not in use yet
-    smaller_file_path = str(smaller_file_entry["file_path"])
-    smaller_file_media_type = str(smaller_file_entry["media_type"])
-    smaller_file_size = str(smaller_file_entry["file_size"])
-    smaller_file_duration = str(smaller_file_entry["duration"])  # noqa not in use yet
+    json_data = json.dumps(data)
 
-    # now we need to subprocess and run another python script, without waiting for it to finish
-    # usage: file_comparison_gui.py [-h] --biggest_file_phash BIGGEST_FILE_PHASH --biggest_file_id BIGGEST_FILE_ID --biggest_file_scene_id BIGGEST_FILE_SCENE_ID --biggest_file_path BIGGEST_FILE_PATH --biggest_file_media_type BIGGEST_FILE_MEDIA_TYPE
-    # --biggest_file_size BIGGEST_FILE_SIZE --smallest_file_phash SMALLEST_FILE_PHASH --smallest_file_id SMALLEST_FILE_ID --smallest_file_scene_id SMALLEST_FILE_SCENE_ID --smallest_file_path SMALLEST_FILE_PATH
-    # --smallest_file_media_type SMALLEST_FILE_MEDIA_TYPE --smallest_file_size SMALLEST_FILE_SIZE
+    file_comparison_gui = Path(__file__).resolve().parent / "file_comparison_gui.py"
 
-    subprocess.Popen(
-        [
-            "python",
-            "file_comparison_gui.py",
-            "--biggest_file_phash",
-            biggest_file_phash,
-            "--biggest_file_id",
-            biggest_file_id,
-            "--biggest_file_path",
-            biggest_file_path,
-            "--biggest_file_media_type",
-            biggest_file_media_type,
-            "--biggest_file_size",
-            biggest_file_size,
-            "--smallest_file_phash",
-            smaller_file_phash,
-            "--smallest_file_id",
-            smaller_file_id,
-            "--smallest_file_path",
-            smaller_file_path,
-            "--smallest_file_media_type",
-            smaller_file_media_type,
-            "--smallest_file_size",
-            smaller_file_size,
-        ]
-    )
+    subprocess.Popen(["python", str(file_comparison_gui), "--data", json_data])
 
 
 def file_to_list(file_path):
@@ -303,9 +269,7 @@ class pHashProcessor:
             - max(entry["file_size"] for entry in group)
             for group in grouped_entries.values()
         )
-        print(
-            f"Theoretical space to save: {self.readable_size(theoretical_space_saved)}\n"
-        )
+        print(f"Theoretical space to save: {readable_size(theoretical_space_saved)}\n")
 
         # Calculate summed file size for each group
         group_sizes = {
@@ -320,13 +284,13 @@ class pHashProcessor:
             reverse=True,
         )
 
+        # Print the summed file size for each group
         for group in sorted_groups:
             phash_value = group[0]["phash"]
             print(
-                f"Group - phash: {phash_value} (Summed File Size: {self.readable_size(group_sizes[phash_value])})"
+                f"Group - phash: {phash_value} (Summed File Size: {readable_size(group_sizes[phash_value])})"
             )
 
-            # Process the group
             self.process_delete_files(group, auto_delete=auto_delete)
 
     def sort_files_by_size(self, group):
@@ -355,12 +319,6 @@ class pHashProcessor:
 
     def process_group(self, group, auto_delete=False):
         # Determine media type of group
-        # Each entity contains a media_type key with a value of "video", "image", or "None"
-        # if all (entry["media_type"] == "video" for entry in group) then we can set media_type to "video"
-        # if all (entry["media_type"] == "image" for entry in group) then we can set media_type to "image"
-        # if all (entry["media_type"] == "None" for entry in group) then we can set media_type to "None"
-        # if any (entry["media_type"] == "video" for entry in group) and any (entry["media_type"] == "image" for entry in group) then we can set media_type to "mixed"
-
         media_type = (
             "video"
             if all(entry["media_type"] == "video" for entry in group)
@@ -377,8 +335,6 @@ class pHashProcessor:
         )
 
         if auto_delete:
-            # find out if every entry in the group has a duration, if not set media_type to True
-
             if not self.is_frames_match(
                 [entry["file_path"] for entry in premium_files + non_premium_files],
                 media_type,
@@ -422,27 +378,14 @@ class pHashProcessor:
                     [entry["file_path"], biggest_file["file_path"]], media_type
                 )
 
-                # here is where we build the window to display the data
-                # it should embed the biggest file on the left, and the file to be deleted on the right
-                # the videos should be muted, but autoplay and loop
-                # with the info about the file below each embed respectively
-                # then underneath the video containers, there should be the text that asks if you are sure you want to delete the file.
-
-                # biggest file data:
-                # biggest_file['file_model'], biggest_file['file_path'], biggest_file['file_size'], biggest_file['duration']
-                # file to be deleted:
-                # entry['file_model'], entry['file_path'], entry['file_size'], entry['duration']
-
-                # if a user decides to delete the file, we pass the path to self.remove_file(path)
-
                 print("Biggest file:")
                 print(f"File Model: {biggest_file['file_model']}")
                 print(f"File Path: {biggest_file['file_path']}")
-                print(f"File Size: {self.readable_size(biggest_file['file_size'])}")
+                print(f"File Size: {readable_size(biggest_file['file_size'])}")
 
                 if biggest_file["duration"] is not None:
                     print(
-                        f"File Duration: {self.readable_duration(biggest_file['duration'])}\n"
+                        f"File Duration: {readable_duration(biggest_file['duration'])}\n"
                     )
                 else:
                     print()
@@ -451,12 +394,10 @@ class pHashProcessor:
                 print(f"Frames Match: {frames_match}")
                 print(f"File Model: {entry['file_model']}")
                 print(f"File Path: {entry['file_path']}")
-                print(f"File Size: {self.readable_size(entry['file_size'])}")
+                print(f"File Size: {readable_size(entry['file_size'])}")
 
                 if entry["duration"] is not None:
-                    print(
-                        f"File Duration: {self.readable_duration(entry['duration'])}\n"
-                    )
+                    print(f"File Duration: {readable_duration(entry['duration'])}\n")
                 else:
                     print()
 
@@ -515,6 +456,9 @@ class pHashProcessor:
                 media_type,
             )
 
+            if output_to_window:
+                update_videos(biggest_file, biggest_file_with_model)
+
             if auto_delete:
                 if not frames_match:
                     print("Frames do not match. Skipping group.\n")
@@ -523,12 +467,10 @@ class pHashProcessor:
             print(f"Frames Match: {frames_match}")
             print(f"File Model: {file_model}")
             print(f"Biggest File Path: {biggest_file_with_model['file_path']}")
-            print(
-                f"File Size: {self.readable_size(biggest_file_with_model['file_size'])}"
-            )
+            print(f"File Size: {readable_size(biggest_file_with_model['file_size'])}")
             if biggest_file_with_model["duration"] is not None:
                 print(
-                    f"File Duration: {self.readable_duration(biggest_file_with_model['duration'])}\n"
+                    f"File Duration: {readable_duration(biggest_file_with_model['duration'])}\n"
                 )
             else:
                 print()
@@ -547,16 +489,13 @@ class pHashProcessor:
                     print(f"Frames Match: {frames_match}")
                     print(f"File Model: {entry['file_model']}")
                     print(f"File Path: {entry['file_path']}")
-                    print(f"File Size: {self.readable_size(entry['file_size'])}")
+                    print(f"File Size: {readable_size(entry['file_size'])}")
                     if entry["duration"] is not None:
                         print(
-                            f"File Duration: {self.readable_duration(entry['duration'])}\n"
+                            f"File Duration: {readable_duration(entry['duration'])}\n"
                         )
                     else:
                         print()
-
-                    if output_to_window:
-                        update_videos(biggest_file, entry)
 
                     if auto_delete:
                         if frames_match:
@@ -585,30 +524,23 @@ class pHashProcessor:
 
         def is_video_frames_match(video_paths):
             try:
-                # Read the first frame from the first video
                 cap = cv2.VideoCapture(video_paths[0])
                 ret, frame1 = cap.read()
                 cap.release()
 
-                # Iterate through the rest of the video paths
                 for path in video_paths[1:]:
-                    # Read the first frame from the current video
                     cap = cv2.VideoCapture(path)
                     ret, frame2 = cap.read()
                     cap.release()
 
-                    # Check if frames could not be read
                     if frame1 is None or frame2 is None:
                         return False
 
-                    # Resize the frames if they have different sizes
                     if frame1.shape != frame2.shape:
                         frame1 = cv2.resize(frame1, frame2.shape[:2][::-1])
 
-                    # Compare the frames using mean squared error (MSE)
                     mse = ((frame1 - frame2) ** 2).mean()
 
-                    # Check if the frames are roughly the same
                     if mse > mse_video_threshold:
                         return False
 
@@ -621,57 +553,43 @@ class pHashProcessor:
         def is_image_frames_match(image_paths):
             patch_size = 128
             try:
-                # Read the first image
                 frame1 = cv2.imread(image_paths[0])
 
-                # Check if the first image could not be read
                 if frame1 is None:
                     return False
 
-                # Iterate through the rest of the image paths
                 for path in image_paths[1:]:
-                    # Read the current image
                     frame2 = cv2.imread(path)
 
-                    # Check if the current image could not be read
                     if frame2 is None:
                         return False
 
-                    # Compare image patches instead of resizing the entire images
                     for i in range(0, frame1.shape[0], patch_size):
                         for j in range(0, frame1.shape[1], patch_size):
-                            # Extract image patches
                             patch1 = frame1[i : i + patch_size, j : j + patch_size]
                             patch2 = frame2[i : i + patch_size, j : j + patch_size]
 
-                            # Resize the patches if they have different sizes
                             if patch1.shape != patch2.shape:
                                 patch1 = cv2.resize(patch1, patch2.shape[:2][::-1])
 
-                            # Compare the patches using mean squared error (MSE)
                             mse = ((patch1 - patch2) ** 2).mean()
 
-                            # Check if the patches are roughly the same
                             if mse > mse_image_threshold:
                                 return False
 
             except Exception as e:
-                # Handle any potential exceptions here
                 print(f"Error occurred: {e}")
                 return False
 
             return True
 
         try:
-            # Check if the input paths correspond to videos
             if all(is_video(path) for path in file_paths):
                 return is_video_frames_match(file_paths)
 
-            # Check if the input paths correspond to images
             if all(is_image(path) for path in file_paths):
                 return is_image_frames_match(file_paths)
 
-            # Unsupported input type
             print("Unsupported input type")
             print(f"Input paths: {file_paths}")
             input("Press Enter to continue...")
@@ -681,31 +599,7 @@ class pHashProcessor:
             print(f"An error occurred: {str(e)}")
             return False
 
-    def readable_size(self, bytes):
-        if bytes < 1024:
-            return f"{bytes} B"
-        elif bytes < 1024**2:
-            return f"{bytes / 1024:.2f} KB"
-        elif bytes < 1024**3:
-            return f"{bytes / 1024 ** 2:.2f} MB"
-        elif bytes < 1024**4:
-            return f"{bytes / 1024 ** 3:.2f} GB"
-        else:
-            return f"{bytes / 1024 ** 4:.2f} TB"
-
-    def readable_duration(self, float):
-        seconds = int(float)
-
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        seconds = seconds % 60
-
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
     def remove_file(self, file_path):
-        # no longer destroys files, just moves them to a trash folder
-        # while preserving the directory structure so they can be easily restored
-
         path = Path(file_path)
 
         if path.exists():
@@ -715,7 +609,6 @@ class pHashProcessor:
             target_dir = trash_directory / relative_path.parent
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            # Move the file to the target directory
             target_path = target_dir / path.name
 
             while True:
@@ -765,9 +658,18 @@ def remove_duplicates():
 
     os.system("cls" if os.name == "nt" else "clear")
 
-    print("Arguments Found:")
+    print("Arguments Found:\n")
+    print("Using Arguments:")
     for arg in vars(args):
-        print(f"{arg}: {getattr(args, arg)}")
+        if getattr(args, arg) is not None:
+            if getattr(args, arg) is True:
+                print(f"{arg}: {getattr(args, arg)}")
+    print("\nUsing Defaults:")
+    for arg in vars(args):
+        if getattr(args, arg) is None:
+            print(f"{arg}: {globals()[arg]}")
+        if getattr(args, arg) is False:
+            print(f"{arg}: {getattr(args, arg)}")
     print()
 
     processor.process_grouped_entries(curated_grouped_entries, auto_delete=auto_delete)
