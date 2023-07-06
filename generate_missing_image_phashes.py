@@ -1,12 +1,14 @@
 import csv
 import sqlite3
 import imagehash
-from PIL import Image
-from pathlib import Path
-from tqdm import tqdm
 import concurrent.futures
 
-from user_config import database_path, phashes_path, processed_images_path
+from PIL import Image
+from tqdm import tqdm
+from pathlib import Path
+from user_config import phashes_path
+from user_config import database_path
+from user_config import processed_images_path
 
 
 def calculate_phash(image_path):
@@ -65,10 +67,10 @@ def update_database_with_phash():
         csv_reader = csv.reader(csv_file)
         rows = list(csv_reader)
 
-        total_rows = len(rows) - 1  # Exclude the header row
+        total_rows = len(rows) - 1
         print(f"Found {total_rows} rows in {phashes_path}")
 
-        for row in rows[1:]:  # Start from index 1 to skip the header row
+        for row in rows[1:]:
             file_id = row[0]
             phash = row[1]
 
