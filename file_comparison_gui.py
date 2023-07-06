@@ -79,6 +79,12 @@ kill_program_by_window_title("file_comparison_gui.py")
 parser = argparse.ArgumentParser(description="Compare two files")
 parser.add_argument("--data", type=str, help="Data in JSON format", required=True)
 args = parser.parse_args()
+
+if not args.data:
+    print("This must be passed via the remove_dupes.py script.")
+    print("This is not intended to be run directly.")
+    exit()
+
 data = json.loads(args.data)
 
 
