@@ -10,6 +10,8 @@ remove_dupes.py - when its asking if you want to remove a file, it assumes no in
 
 remove_dupes.py - --auto-delete, will delete without input if it determines the first frame is a good enough match (mse threshold) for both files. (both being biggest_file, and smaller_file)
 
+remove_dupes.py - it will actually only *really* delete files if you pass --direct-delete, otherwise it moves the file to the specified trash directory
+
 ## Usage
 
 fill out the user_config.py file with your information.
