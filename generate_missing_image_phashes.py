@@ -6,6 +6,7 @@ import concurrent.futures
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
+
 from user_config import phashes_path
 from user_config import database_path
 from user_config import processed_images_path
