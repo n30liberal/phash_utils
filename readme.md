@@ -3,6 +3,8 @@ This is all hacky and proof of concept, and not done well at all.
 These independent scripts are meant to help use stashapps database data to help remove perfectly matched phashes in a more friendly way.
 (their web interface is not very friendly for this)
 
+Only works with exact match phashes! I still have to figure out how to do the distance stuff for close matches.
+
 ## Usage
 
 fill out the user_config.py file with your information.
