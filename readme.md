@@ -5,6 +5,10 @@ These independent scripts are meant to help use stashapps database data to help 
 
 Only works with exact match phashes! I still have to figure out how to do the distance stuff for close matches.
 
+## WARNING
+remove_dupes.py - when its asking if you want to remove a file, it assumes no input == yes, so you actually need to put n for no
+remove_dupes.py - --auto-delete, will delete without input if it determines the first frame is a good enough match (mse threshold) for both files. (both being biggest_file, and smaller_file)
+
 ## Usage
 
 fill out the user_config.py file with your information.
