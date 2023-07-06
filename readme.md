@@ -19,8 +19,7 @@ fill out the user_config.py file with your information.
 1. remove_dupes.py
     - This reads the sqlite database, and groups every file by phash
     - Then it shows you every group with more than 1 file in it, and asks you if you want to delete the files in that group. A file at a time.
-    - Optionally, you can run file_comparison_gui.py, with --output-to-window, and it will show a poorly designed, nowhere near finished window that shows the first frame for each video.
-    - It assumes you have sudo installed on windows to kill the previous instance each time its called (yes i know, very bad)
+    - Optionally, you can run file_comparison_gui.py, with --output-to-window, and it will show a poorly designed, nowhere near finished window that shows the first frame for each video. It assumes you have sudo installed on windows to kill the previous instance each time its called (yes i know, very bad)
 
 2.  image_phash_util.py
     - Here we can use the stash database to see which images we have in our system, and then it can generate a phash for each image. (this took me ~12 hours to generate all of my phashes.
