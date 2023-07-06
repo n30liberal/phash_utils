@@ -12,9 +12,7 @@ from build_db import build_and_populate_database
 
 from user_config import database_path
 from user_config import blacklisted_phash_path
-from user_config import prioritized_directories
 from user_config import readable_size, readable_duration
-from user_config import mse_image_threshold, mse_video_threshold
 from user_config import trash_directory, collections_directory
 
 os.system("title remove_dupes.py")
@@ -57,6 +55,17 @@ parser.add_argument(
     action="store_true",
     help="Override value for output_to_window",
 )
+parser.add_argument(
+    "--prioritized-directories",
+    nargs="+",
+    help="Override value for prioritized_directories",
+)
+parser.add_argument(
+    "--mse-image-threshold", type=int, help="Override value for mse_image_threshold"
+)
+parser.add_argument(
+    "--mse-video-threshold", type=int, help="Override value for mse_video_threshold"
+)
 args = parser.parse_args()
 
 if args.auto_delete:
@@ -91,6 +100,18 @@ if args.output_to_window:
     output_to_window = args.output_to_window
 else:
     from user_config import output_to_window
+if args.prioritized_directories:
+    prioritized_directories = args.prioritized_directories
+else:
+    from user_config import prioritized_directories
+if args.mse_image_threshold:
+    mse_image_threshold = args.mse_image_threshold
+else:
+    from user_config import mse_image_threshold
+if args.mse_video_threshold:
+    mse_video_threshold = args.mse_video_threshold
+else:
+    from user_config import mse_video_threshold
 
 
 def update_videos(biggest_file_entry, smaller_file_entry):
