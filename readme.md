@@ -22,7 +22,7 @@ fill out the user_config.py file with your information.
     - Optionally, you can run file_comparison_gui.py, with --output-to-window, and it will show a poorly designed, nowhere near finished window that shows the first frame for each video.
     - It assumes you have sudo installed on windows to kill the previous instance each time its called (yes i know, very bad)
 
-2.  generate_missing_image_phashes.py
+2.  image_phash_util.py
     - Here we can use the stash database to see which images we have in our system, and then it can generate a phash for each image.
     - ~~The outputted csv has no current use, but in the future we will add the image phashes into our sqlite database, and then we can use that remove images with shared phashes, the same way we do with videos.~~
     - You can now scan for duplicate images *after* running this py file. Just be sure to run remove_dupes.py without the --rebuild-database param, before generating your phashes.
