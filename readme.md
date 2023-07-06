@@ -34,7 +34,7 @@ fill out the user_config.py file with your information.
 ## final notes
 
 These are all real hacky, and I only got them to a usable state for myself. Theres so many ways to improve them, and will get to it eventually.
-Ultimately, I also dont want the companion server, I want this all packaged with a single script using CustomTkinter for the interface.
+Ultimately, I don't want a separate gui app, this solution isnt good.
 
 Also, I'd also like to be able to group phashes by non-exact matches, but math is not my strong suit, so that's on the back burner.
 
